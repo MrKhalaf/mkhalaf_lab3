@@ -82,9 +82,15 @@ CmdLine parse_cmdline(int argc, char *argv[]) {
     CmdLine cmdLine;
     cmdLine.commands = (Cmd *) malloc(sizeof(Cmd)); // may need to be add NULL as first later check after
     cmdLine.numCmds = 0; // check will need to be run.
+    cmdLine.malformed = false; // flags malformed lines.
     Cmd cmd;
     cmd.argc = 0;
     int i = 0;
+    if (argc == 0){
+        cmd.background = cmd.ch_stdin = cmd.ch_stdout = cmd.pipe = cmd.stdoutTrunc = cmd.exec_set = false;
+    }
+
+
     while ( i < argc) {
 
         if (i > 0 && cmdLine.commands[cmdLine.numCmds-1].pipe) {
@@ -104,7 +110,8 @@ CmdLine parse_cmdline(int argc, char *argv[]) {
                 if (i != argc - 1) {
                     // if it isn't then we're in the wrong ehre
                     fprintf(stderr, "Error: \"&\" must be last token on command line\n");
-
+                    cmdLine.malformed = true;
+                    return cmdLine;
                 } else {
                     cmd.background = true;
                 }
@@ -113,6 +120,8 @@ CmdLine parse_cmdline(int argc, char *argv[]) {
                 if (cmd.ch_stdin) {
                     // if we already have a stdin change here, error
                     fprintf(stderr, "Error: Ambiguous input redirection.\n");
+                    cmdLine.malformed = true;
+                    return cmdLine;
                     break;
                 }
                 cmd.ch_stdin = true;
@@ -121,6 +130,8 @@ CmdLine parse_cmdline(int argc, char *argv[]) {
             } else if (strcmp(arg, ">") == 0) {
                 if (cmd.pipe || cmd.ch_stdout || cmd.stdoutTrunc) {
                     fprintf(stderr, "Error: Ambiguous output redirection.\n");
+                    cmdLine.malformed = true;
+                    return cmdLine;
                 }
                 cmd.ch_stdout = true;
                 i++;
@@ -128,6 +139,8 @@ CmdLine parse_cmdline(int argc, char *argv[]) {
             } else if (strcmp(arg, ">>") == 0) {
                 if (cmd.pipe || cmd.ch_stdout || cmd.stdoutTrunc) {
                     fprintf(stderr, "Error: Ambiguous output redirection.\n");
+                    cmdLine.malformed = true;
+                    return cmdLine;
                 }
                 cmd.stdoutTrunc = true;
                 i++;
@@ -135,6 +148,8 @@ CmdLine parse_cmdline(int argc, char *argv[]) {
             } else if (strcmp(arg, "|") == 0) {
                 if (cmd.pipe || cmd.ch_stdout || cmd.stdoutTrunc) {
                     fprintf(stderr, "Error: Ambiguous output redirection.\n");
+                    cmdLine.malformed = true;
+                    return cmdLine;
                 }
                 cmd.pipe = true;
                 // we know there is another command now.
@@ -184,15 +199,13 @@ int execute_line(CmdLine line) {
         Cmd cmd = line.commands[i];
         int inFD = 0; // input fd
         int outFD = 1;
-        char cmdBuf[1024];
         if (i == 0) {
             // if we're at the first command
             if (cmd.ch_stdin) {
-                printf("Hey\n");
-                fflush(stdout);
                 inFD = open(cmd.stdin, O_RDONLY);
                 if (inFD == -1) {
                     fprintf(stderr, "Error: open(\"%s\"): %s\n", cmd.stdo, strerror(errno));
+                    fflush(stdout);
                     return -1;
                 }
                 dup2(inFD, 0); // replace stdin with input file
@@ -268,26 +281,31 @@ int execute_line(CmdLine line) {
 #pragma ide diagnostic ignored "EndlessLoop"
 int main() {
 
-    Tokens t;
-    CmdLine cmdLine;
-//    while(1) {
-    // a struct defined in tokens.h
-    printf("mysh:");
-    fflush(stdout);
+    while(1) {
+        // a struct defined in tokens.h
+        Tokens t;
+        CmdLine cmdLine;
 
-    // ERROR Handle later
-    fgets(lineBuffer, 1024, stdin);
-    t = get_tokens(lineBuffer);
-    cmdLine = parse_cmdline(t.numTokens, t.tokens);
+        printf("mysh:");
+        fflush(stdout);
 
-    fflush(stdout);
+        // ERROR Handle later
+        fgets(lineBuffer, 1024, stdin);
+        t = get_tokens(lineBuffer);
+        cmdLine = parse_cmdline(t.numTokens, t.tokens);
+        // check for malformed line
+        if (cmdLine.malformed) {
+            continue;
+        }
 
-    if (execute_line(cmdLine) == -1) {
-        // there was an error here, but no need to do anything
-        int ok = 0;
-    }
-    free_tokens(t.tokens);
-//    }
+        if (execute_line(cmdLine) == -1) {
+            // there was an error here, but no need to do anything
+            // since we will just free tokens from here anyway.
+            free_tokens(t.tokens);
+            continue;
+        }
+        free_tokens(t.tokens);
+        }
     return 0;
 }
 #pragma clang diagnostic pop
