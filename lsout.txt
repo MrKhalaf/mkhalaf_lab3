@@ -1,0 +1,14 @@
+mysh:
+CMakeLists.txt
+Makefile
+catout.txt
+cmake-build-debug
+f1.txt
+f2.txt
+lsout.txt
+mysh
+mysh.c
+mysh.o
+mysh.pdf
+tokens.c
+tokens.h
