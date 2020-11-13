@@ -30,6 +30,7 @@ typedef struct {
     size_t numCmds;
     // Collection of individual commands
     Cmd * commands;
+    bool malformed;
 } CmdLine;
 
 typedef struct {
@@ -103,7 +104,7 @@ CmdLine parse_cmdline(int argc, char *argv[]) {
                 if (i != argc - 1) {
                     // if it isn't then we're in the wrong ehre
                     fprintf(stderr, "Error: \"&\" must be last token on command line\n");
-                    // exit or something
+
                 } else {
                     cmd.background = true;
                 }
@@ -175,7 +176,7 @@ CmdLine parse_cmdline(int argc, char *argv[]) {
 
 
 
-void execute_line(CmdLine line) {
+int execute_line(CmdLine line) {
     // read through each command
     int i = 0;
     int nCmds = line.numCmds;
@@ -190,22 +191,25 @@ void execute_line(CmdLine line) {
                 inFD = open(cmd.stdin, O_RDONLY);
                 if (inFD == -1) {
                     fprintf(stderr, "Error: open(\"%s\"): %s\n", cmd.stdo, strerror(errno));
-                    exit(errno);
+                    return -1;
                 }
                 dup2(inFD, 0); // replace stdin with input file
                 close(inFD);
                 // that may be it?
             }
-            // ignore piping now, just a output redirection
             if (cmd.ch_stdout) {
-                outFD = open(cmd.stdo, O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP |S_IROTH);
+                outFD = open(cmd.stdo, O_CREAT | O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP |S_IROTH);
                 if (outFD == -1) {
                     fprintf(stderr, "Error: open(\"%s\"): %s\n", cmd.stdo, strerror(errno));
-                    exit(errno);
+                    fflush(stdout);
+                    return -1;
                 }
                 dup2(outFD, 1); // redir stdout to the file.
                 close(outFD);
+
             }
+            // ignore piping now, just a output redirection
+
 
             if (i == nCmds - 1 && cmd.background) {
                 // if this is the only command, check for background
@@ -219,8 +223,8 @@ void execute_line(CmdLine line) {
                 if (cmd.exec_set) {
                     if (execvp(cmd.exec, cmd.argv) == -1){
                         perror("execvp");
+                        return -1;
                     }
-                    exit(-1);
                 }
             } else {
                 // parent: wait if foreground, don't wait if it's a background process
@@ -228,6 +232,7 @@ void execute_line(CmdLine line) {
                     wpid = wait(&status);
                     if (wpid == -1) {
                         perror("wait");
+                        return -1;
                     }
                 }
                 // we may be good otherwise
@@ -250,6 +255,7 @@ void execute_line(CmdLine line) {
             int b = 11;
         }
     }
+    return 1;
 }
 
 #pragma clang diagnostic push
@@ -258,22 +264,24 @@ int main() {
 
     Tokens t;
     CmdLine cmdLine;
+    while(1) {
+        // a struct defined in tokens.h
+        printf("mysh:");
+        fflush(stdout);
 
-    // a struct defined in tokens.h
-    printf("mysh:");
-    fflush(stdout);
+        // ERROR Handle later
+        fgets(lineBuffer, 1024, stdin);
+        t = get_tokens(lineBuffer);
+        cmdLine = parse_cmdline(t.numTokens, t.tokens);
 
-    // ERROR Handle later
-    fgets(lineBuffer, 1024, stdin);
-    t = get_tokens(lineBuffer);
-    cmdLine = parse_cmdline(t.numTokens, t.tokens);
+        fflush(stdout);
 
-    printf("%s\n", cmdLine.commands[0].stdo);
-    fflush(stdout);
-
-    execute_line(cmdLine);
-    free_tokens(t.tokens);
-
+        if (execute_line(cmdLine) == -1) {
+            // there was an error here, but no need to do anything
+            int ok = 0;
+        }
+        free_tokens(t.tokens);
+    }
     return 0;
 }
 #pragma clang diagnostic pop
