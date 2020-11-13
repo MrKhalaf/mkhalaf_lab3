@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <signal.h>
 
 /* ------- GLOBAL ------- */
 char lineBuffer[1024];
@@ -124,12 +125,22 @@ CmdLine parse_cmdline(int argc, char *argv[]) {
                     return cmdLine;
                     break;
                 }
+                if (i == argc - 1) {
+                    fprintf(stderr, "Error: Missing filename for input redirection. \n");
+                    cmdLine.malformed = true;
+                    return cmdLine;
+                }
                 cmd.ch_stdin = true;
                 i++; // skip over this next iteration as we're taking the file
                 cmd.stdin = argv[i];
             } else if (strcmp(arg, ">") == 0) {
                 if (cmd.pipe || cmd.ch_stdout || cmd.stdoutTrunc) {
                     fprintf(stderr, "Error: Ambiguous output redirection.\n");
+                    cmdLine.malformed = true;
+                    return cmdLine;
+                }
+                if (i == argc - 1) {
+                    fprintf(stderr, "Error: Missing filename for output redirection. \n");
                     cmdLine.malformed = true;
                     return cmdLine;
                 }
@@ -142,6 +153,9 @@ CmdLine parse_cmdline(int argc, char *argv[]) {
                     cmdLine.malformed = true;
                     return cmdLine;
                 }
+                if (i == argc - 1) {
+                    fprintf(stderr, "Error: Missing filename for output redirection. \n");
+                }
                 cmd.stdoutTrunc = true;
                 i++;
                 cmd.stdo = argv[i];
@@ -151,6 +165,7 @@ CmdLine parse_cmdline(int argc, char *argv[]) {
                     cmdLine.malformed = true;
                     return cmdLine;
                 }
+
                 cmd.pipe = true;
                 // we know there is another command now.
                 cmdLine.numCmds++;
@@ -164,18 +179,20 @@ CmdLine parse_cmdline(int argc, char *argv[]) {
                 i++;
                 break; // break out of this while loop to define defaults for next Cmd
             } else if (strcmp(arg, "exit") == 0) {
+                kill(0, SIGKILL);
                 exit(0);
             } else {
                 // what we probably have is the command otherwise throw it in args
                 if (!cmd.exec_set) {
                     cmd.exec = arg;
                     cmd.exec_set = true;
-                } else {
-                    cmd.argc++; // add an additional arg
-                    cmd.argv = (char **) realloc(cmd.argv, (cmd.argc + 1) * sizeof(char *));
-                    cmd.argv[cmd.argc - 1] = strdup(arg);
-                    cmd.argv[cmd.argc] = NULL;
+
                 }
+
+                cmd.argc++; // add an additional arg
+                cmd.argv = (char **) realloc(cmd.argv, (cmd.argc + 1) * sizeof(char *));
+                cmd.argv[cmd.argc - 1] = strdup(arg);
+                cmd.argv[cmd.argc] = NULL;
             }
             i++;
         }
@@ -202,6 +219,7 @@ int execute_line(CmdLine line) {
         if (i == 0) {
             // if we're at the first command
             if (cmd.ch_stdin) {
+                // we know this will not be a pipe.
                 inFD = open(cmd.stdin, O_RDONLY);
                 if (inFD == -1) {
                     fprintf(stderr, "Error: open(\"%s\"): %s\n", cmd.stdo, strerror(errno));
@@ -227,13 +245,7 @@ int execute_line(CmdLine line) {
                 close(outFD);
 
             }
-            // ignore piping now, just a output redirection
 
-
-            if (i == nCmds - 1 && cmd.background) {
-                // if this is the only command, check for background
-
-            }
 
             // here we fork and make the child run the process while the parent waits for foreground process
             int status, wpid;
