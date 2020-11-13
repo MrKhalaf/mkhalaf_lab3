@@ -87,7 +87,7 @@ CmdLine parse_cmdline(int argc, char *argv[]) {
     int i = 0;
     while ( i < argc) {
 
-        if (cmd.ch_stdin == true) {
+        if (i > 0 && cmdLine.commands[cmdLine.numCmds-1].pipe) {
             // if cmd has been piped into already leave stdin as true.
             cmd.background = cmd.ch_stdout = cmd.pipe = cmd.stdoutTrunc = cmd.exec_set = false;
         }else {
@@ -188,6 +188,8 @@ int execute_line(CmdLine line) {
         if (i == 0) {
             // if we're at the first command
             if (cmd.ch_stdin) {
+                printf("Hey\n");
+                fflush(stdout);
                 inFD = open(cmd.stdin, O_RDONLY);
                 if (inFD == -1) {
                     fprintf(stderr, "Error: open(\"%s\"): %s\n", cmd.stdo, strerror(errno));
@@ -197,8 +199,12 @@ int execute_line(CmdLine line) {
                 close(inFD);
                 // that may be it?
             }
-            if (cmd.ch_stdout) {
-                outFD = open(cmd.stdo, O_CREAT | O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP |S_IROTH);
+            if (cmd.ch_stdout || cmd.stdoutTrunc) {
+                if (cmd.ch_stdout) {
+                    outFD = open(cmd.stdo, O_CREAT | O_WRONLY | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+                } else if (cmd.stdoutTrunc) {
+                    outFD = open(cmd.stdo, O_CREAT | O_WRONLY | O_APPEND, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+                }
                 if (outFD == -1) {
                     fprintf(stderr, "Error: open(\"%s\"): %s\n", cmd.stdo, strerror(errno));
                     fflush(stdout);
@@ -264,24 +270,24 @@ int main() {
 
     Tokens t;
     CmdLine cmdLine;
-    while(1) {
-        // a struct defined in tokens.h
-        printf("mysh:");
-        fflush(stdout);
+//    while(1) {
+    // a struct defined in tokens.h
+    printf("mysh:");
+    fflush(stdout);
 
-        // ERROR Handle later
-        fgets(lineBuffer, 1024, stdin);
-        t = get_tokens(lineBuffer);
-        cmdLine = parse_cmdline(t.numTokens, t.tokens);
+    // ERROR Handle later
+    fgets(lineBuffer, 1024, stdin);
+    t = get_tokens(lineBuffer);
+    cmdLine = parse_cmdline(t.numTokens, t.tokens);
 
-        fflush(stdout);
+    fflush(stdout);
 
-        if (execute_line(cmdLine) == -1) {
-            // there was an error here, but no need to do anything
-            int ok = 0;
-        }
-        free_tokens(t.tokens);
+    if (execute_line(cmdLine) == -1) {
+        // there was an error here, but no need to do anything
+        int ok = 0;
     }
+    free_tokens(t.tokens);
+//    }
     return 0;
 }
 #pragma clang diagnostic pop
